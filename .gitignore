@@ -1,0 +1,33 @@
+dist/
+*.pdb
+*.user
+*.suo
+
+# Build products and local settings never belong in a source commit.
+bin/
+obj/
+.vs/
+*.exe
+*.dll
+*.zip
+*.log
+*.dmp
+*.bak
+*.tmp
+claude-usage.json
+settings.txt
+
+# Credentials and machine-specific files.
+.env
+.env.*
+!.env.example
+auth.json
+credentials.json
+*.pem
+*.key
+*.pfx
+*.p12
+.codex/
+.agentops/
+Thumbs.db
+.DS_Store
