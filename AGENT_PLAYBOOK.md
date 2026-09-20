@@ -10,7 +10,10 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\scripts\test-loca
 ```
 
 For visual changes, regenerate demo assets with `scripts\render-docs-assets.ps1`
-and inspect the actual 276 x 64 captures in light and dark mode. Check missing,
+and inspect the native 276 x 64 view and high-resolution exports. The GIF encoder
+needs Python with Pillow only on the documentation author's machine; use
+`-SkipAnimation` for stills without Python. See `docs/media.md` for reproduction.
+Check light and dark mode, missing,
 partial, stale, full, empty, and near-reset states. Never publish real account captures.
 Before a commit, run `git diff --check` and inspect the exact staged files.
 

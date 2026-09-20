@@ -1,83 +1,26 @@
+param([string]$PythonPath = 'python', [switch]$SkipAnimation)
 $ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
 
-if (-not ('AnimatedGifWriter' -as [type])) {
-    Add-Type -ReferencedAssemblies System.Drawing.dll -TypeDefinition @'
-using System;
-using System.Collections.Generic;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.Runtime.Serialization;
-
-public static class AnimatedGifWriter
-{
-    private static PropertyItem NewPropertyItem(int id, short type, byte[] value)
-    {
-        PropertyItem item = (PropertyItem)FormatterServices.GetUninitializedObject(typeof(PropertyItem));
-        item.Id = id;
-        item.Type = type;
-        item.Len = value.Length;
-        item.Value = value;
-        return item;
-    }
-
-    public static void Save(IList<Bitmap> frames, string path, int delayHundredths)
-    {
-        if (frames == null || frames.Count == 0) throw new ArgumentException("At least one frame is required.");
-
-        ImageCodecInfo encoder = null;
-        foreach (ImageCodecInfo candidate in ImageCodecInfo.GetImageEncoders())
-        {
-            if (candidate.FormatID == ImageFormat.Gif.Guid)
-            {
-                encoder = candidate;
-                break;
-            }
-        }
-        if (encoder == null) throw new InvalidOperationException("GIF encoder is unavailable.");
-
-        byte[] delays = new byte[frames.Count * 4];
-        for (int index = 0; index < frames.Count; index++)
-        {
-            byte[] delay = BitConverter.GetBytes(delayHundredths);
-            Buffer.BlockCopy(delay, 0, delays, index * 4, 4);
-        }
-
-        Bitmap first = frames[0];
-        first.SetPropertyItem(NewPropertyItem(0x5100, 4, delays));
-        first.SetPropertyItem(NewPropertyItem(0x5101, 3, new byte[] { 0, 0 }));
-
-        using (EncoderParameters parameters = new EncoderParameters(1))
-        {
-            parameters.Param[0] = new EncoderParameter(Encoder.SaveFlag, (long)EncoderValue.MultiFrame);
-            first.Save(path, encoder, parameters);
-
-            parameters.Param[0].Dispose();
-            for (int index = 1; index < frames.Count; index++)
-            {
-                parameters.Param[0] = new EncoderParameter(Encoder.SaveFlag, (long)EncoderValue.FrameDimensionTime);
-                first.SaveAdd(frames[index], parameters);
-                parameters.Param[0].Dispose();
-            }
-
-            parameters.Param[0] = new EncoderParameter(Encoder.SaveFlag, (long)EncoderValue.Flush);
-            first.SaveAdd(parameters);
-        }
-    }
-}
-'@
-}
-
 $projectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$assemblyPath = Join-Path $projectRoot 'dist\AgentUsageBar.exe'
+$renderRoot = Join-Path $projectRoot 'dist\documentation'
+$assemblyPath = Join-Path $renderRoot 'DocumentationRenderer.dll'
 $outputRoot = Join-Path $projectRoot 'docs\screenshots'
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $renderRoot | Out-Null
 
-if (-not (Test-Path -LiteralPath $assemblyPath)) {
-    throw "Build the application before rendering documentation assets: $assemblyPath"
-}
+# Compile the actual app drawing code with a DPI-aware GDI adapter. This is a
+# documentation-only library, never shipped or loaded by the running widget.
+$compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+& $compiler /nologo /target:library /define:DOCUMENTATION_RENDER /optimize+ /langversion:5 `
+    /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll `
+    /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll `
+    "/out:$assemblyPath" (Join-Path $projectRoot 'AgentUsageBar.cs') `
+    (Join-Path $projectRoot 'ClaudeUsageData.cs') (Join-Path $projectRoot 'ClaudeUsageService.cs') `
+    (Join-Path $PSScriptRoot 'DocumentationRenderer.cs')
+if ($LASTEXITCODE -ne 0) { throw 'Documentation renderer compilation failed.' }
 
 $assembly = [Reflection.Assembly]::LoadFile($assemblyPath)
 $formType = $assembly.GetType('CodexUsageBar.UsageBarForm', $true)
@@ -96,6 +39,11 @@ $trayIconMethod = $formType.GetMethod('CreatePercentageTrayIcon', [Reflection.Bi
 $form = [Activator]::CreateInstance($formType, $true)
 $claudeProvider = [Enum]::Parse($assembly.GetType('CodexUsageBar.UsageProvider'), 'Claude')
 $claudeForm = [Activator]::CreateInstance($formType, @($claudeProvider))
+$trayField = $formType.GetField('_trayIcon', [Reflection.BindingFlags]'Instance, NonPublic')
+$trayField.GetValue($form).Visible = $false
+$trayField.GetValue($claudeForm).Visible = $false
+# Force motion only in these offscreen demonstration frames.
+$formType.GetField('_attentionMotionEnabled', [Reflection.BindingFlags]'Instance, NonPublic').SetValue($form, $true)
 
 function New-RoundedPath([Drawing.RectangleF]$rectangle, [single]$radius) {
     $diameter = $radius * 2
@@ -147,7 +95,7 @@ function New-DemoSnapshot([double]$usedPercent, [double[]]$creditHours) {
     return $snapshot
 }
 
-function Render-Widget($snapshot, [bool]$darkMode, [single]$phase, [bool]$claude = $false) {
+function Render-Widget($snapshot, [bool]$darkMode, [single]$phase, [bool]$claude = $false, [int]$scale = 4) {
     $targetForm = if ($claude) { $claudeForm } else { $form }
     $snapshotField.SetValue($targetForm, $snapshot)
     $darkModeField.SetValue($targetForm, $darkMode)
@@ -156,22 +104,7 @@ function Render-Widget($snapshot, [bool]$darkMode, [single]$phase, [bool]$claude
     $serviceErrorField.SetValue($targetForm, $null)
     $refreshingField.SetValue($targetForm, $false)
 
-    $raw = New-Object Drawing.Bitmap 276, 64, ([Drawing.Imaging.PixelFormat]::Format32bppArgb)
-    $targetForm.DrawToBitmap($raw, [Drawing.Rectangle]::new(0, 0, 276, 64))
-    $masked = New-Object Drawing.Bitmap 276, 64, ([Drawing.Imaging.PixelFormat]::Format32bppArgb)
-    $graphics = [Drawing.Graphics]::FromImage($masked)
-    $clip = New-RoundedPath ([Drawing.RectangleF]::new(0, 0, 276, 64)) 10
-    try {
-        $graphics.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
-        $graphics.SetClip($clip)
-        $graphics.DrawImageUnscaled($raw, 0, 0)
-    }
-    finally {
-        $clip.Dispose()
-        $graphics.Dispose()
-        $raw.Dispose()
-    }
-    return $masked
+    return [CodexUsageBar.DocumentationRenderer]::Render($targetForm, $scale)
 }
 
 function Draw-ScaledWidget([Drawing.Graphics]$graphics, [Drawing.Bitmap]$widget, [Drawing.RectangleF]$destination) {
@@ -183,12 +116,15 @@ function Draw-ScaledWidget([Drawing.Graphics]$graphics, [Drawing.Bitmap]$widget,
 }
 
 function New-Canvas([int]$width, [int]$height, [Drawing.Color]$background) {
-    $bitmap = New-Object Drawing.Bitmap $width, $height, ([Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    # Two physical pixels per layout pixel. Text and vectors render at 2x;
+    # widget bitmaps are already 4x and are only ever downsampled.
+    $bitmap = New-Object Drawing.Bitmap ($width * 2), ($height * 2), ([Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $bitmap.SetResolution(96, 96)
     $graphics = [Drawing.Graphics]::FromImage($bitmap)
     $graphics.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $graphics.TextRenderingHint = [Drawing.Text.TextRenderingHint]::ClearTypeGridFit
+    $graphics.TextRenderingHint = [Drawing.Text.TextRenderingHint]::AntiAliasGridFit
     $graphics.Clear($background)
+    $graphics.ScaleTransform(2, 2)
     return @($bitmap, $graphics)
 }
 
@@ -218,6 +154,7 @@ $darkMuted = [Drawing.Color]::FromArgb(166, 172, 184)
 
 $normalSnapshot = New-DemoSnapshot 24 @([double]168)
 $urgentSnapshot = New-DemoSnapshot 31 @([double]8, [double]320, [double]344)
+$criticalSnapshot = New-DemoSnapshot 31 @([double]0.75, [double]320, [double]344)
 $claudeSnapshot = New-DemoSnapshot 14 @()
 $sessionWindow = [Activator]::CreateInstance($windowType, $true)
 $windowType.GetProperty('UsedPercent').SetValue($sessionWindow, [double]34, $null)
@@ -244,6 +181,8 @@ try {
     $created.Add((Save-Png $alertWidget 'widget-expiry-alert.png'))
     $created.Add((Save-Png $claudeLight 'widget-claude-light.png'))
     $created.Add((Save-Png $claudeDark 'widget-claude-dark.png'))
+    $native = Render-Widget $normalSnapshot $false 0 $false 1
+    try { $created.Add((Save-Png $native 'widget-light-native.png')) } finally { $native.Dispose() }
 
     # 01 - Overview / social preview
     $pair = New-Canvas 1280 640 $lightCanvas
@@ -289,8 +228,8 @@ try {
         $g.DrawString('FINAL 24 HOURS', $fontSmallBold, (New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(244, 157, 72))), 94, 218)
         Draw-ScaledWidget $g $alertWidget ([Drawing.RectangleF]::new(82, 285, 510.6, 118.4))
         $g.DrawString('A small ember travels around the edge.', $fontBodyBold, (New-Object Drawing.SolidBrush($darkInk)), 94, 455)
-        $g.DrawString('It stops when the widget is hidden and respects Windows motion settings.', $fontSmall, (New-Object Drawing.SolidBrush($darkMuted)), 94, 491)
-        $g.DrawString('The countdown remains readable without hovering.', $fontSmall, (New-Object Drawing.SolidBrush($darkMuted)), 94, 520)
+        $g.DrawString('It stops when hidden and respects Windows motion settings.', $fontSmall, (New-Object Drawing.SolidBrush($darkMuted)), 94, 491)
+        $g.DrawString('Final hour: the border turns red and the ember moves faster.', $fontSmall, (New-Object Drawing.SolidBrush($darkMuted)), 94, 520)
 
         Fill-RoundedRect $g ([Drawing.RectangleF]::new(650, 150, 566, 500)) 22 ([Drawing.Color]::FromArgb(28, 33, 43))
         Draw-RoundedBorder $g ([Drawing.RectangleF]::new(650.5, 150.5, 565, 499)) 22 ([Drawing.Color]::FromArgb(55, 63, 78)) 1
@@ -317,36 +256,56 @@ try {
     }
     finally { $g.Dispose(); $expiry.Dispose() }
 
-    # 03 - Tray status states
-    $pair = New-Canvas 1280 500 $lightCanvas
+    # 03 - Windows taskbar context. Deliberately labelled as a mock, not a capture.
+    $pair = New-Canvas 1280 640 $lightCanvas
     $tray = $pair[0]
     $g = $pair[1]
     $trayBitmaps = New-Object Collections.Generic.List[Drawing.Bitmap]
     try {
-        $g.DrawString('Readable at tray size', $fontTitle, (New-Object Drawing.SolidBrush($ink)), 70, 54)
-        $g.DrawString('The number is primary; color adds status context.', $fontBody, (New-Object Drawing.SolidBrush($muted)), 72, 109)
-        Fill-RoundedRect $g ([Drawing.RectangleF]::new(70, 176, 1140, 220)) 24 ([Drawing.Color]::White)
-        Draw-RoundedBorder $g ([Drawing.RectangleF]::new(70.5, 176.5, 1139, 219)) 24 ([Drawing.Color]::FromArgb(216, 218, 222)) 1
+        $g.DrawString('The percentage is in your taskbar, too.', $fontTitle, (New-Object Drawing.SolidBrush($ink)), 70, 48)
+        $g.DrawString('Keep an eye on both providers, even with the floating bars hidden.', $fontBody, (New-Object Drawing.SolidBrush($muted)), 72, 105)
+        $g.DrawString('TASKBAR MOCK / SAMPLE DATA / REAL APP ICON RENDERER', $fontSmallBold, (New-Object Drawing.SolidBrush($blue)), 74, 153)
+        Fill-RoundedRect $g ([Drawing.RectangleF]::new(70, 202, 1140, 334)) 18 ([Drawing.Color]::FromArgb(230, 234, 237))
 
-        $tests = @(@(100, 0, 'Full'), @(72, 0, 'Healthy'), @(25, 1, 'Low'), @(9, 2, 'Critical'))
-        for ($index = 0; $index -lt $tests.Count; $index++) {
-            $percent = $tests[$index][0]
-            $state = $tests[$index][1]
-            $label = $tests[$index][2]
-            $icon = $trayIconMethod.Invoke($null, @($percent, $state, $false))
-            try { $iconBitmap = $icon.ToBitmap() }
-            finally { $icon.Dispose() }
-            $trayBitmaps.Add($iconBitmap)
-            $x = 150 + ($index * 270)
-            $g.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
-            $g.PixelOffsetMode = [Drawing.Drawing2D.PixelOffsetMode]::Half
-            $g.DrawImage($iconBitmap, [Drawing.Rectangle]::new($x, 226, 80, 80), 0, 0, 20, 20, [Drawing.GraphicsUnit]::Pixel)
-            $g.DrawImageUnscaled($iconBitmap, $x + 101, 256)
-            $g.DrawString("$percent%", $fontHeading, (New-Object Drawing.SolidBrush($ink)), $x, 320)
-            $g.DrawString($label, $fontSmall, (New-Object Drawing.SolidBrush($muted)), $x, 352)
-        }
-        $g.DrawString('Large preview', $fontSmall, (New-Object Drawing.SolidBrush($muted)), 148, 409)
-        $g.DrawString('Actual 20 px', $fontSmall, (New-Object Drawing.SolidBrush($muted)), 247, 409)
+        $codexTray = [CodexUsageBar.DocumentationRenderer]::RenderTray(76, 0, $false, 8)
+        $claudeTray = [CodexUsageBar.DocumentationRenderer]::RenderTray(66, 0, $true, 8)
+        $trayBitmaps.Add($codexTray)
+        $trayBitmaps.Add($claudeTray)
+        Fill-RoundedRect $g ([Drawing.RectangleF]::new(128, 244, 960, 190)) 14 ([Drawing.Color]::White)
+        $g.DrawString('Icon close-up', $fontSmall, (New-Object Drawing.SolidBrush($muted)), 162, 267)
+        $g.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+        $g.DrawImage($codexTray, [Drawing.RectangleF]::new(166, 308, 72, 72))
+        $g.DrawString('Codex', $fontHeading, (New-Object Drawing.SolidBrush($ink)), 260, 313)
+        $g.DrawString('76% weekly remaining', $fontBody, (New-Object Drawing.SolidBrush($muted)), 260, 349)
+        $g.DrawImage($claudeTray, [Drawing.RectangleF]::new(628, 308, 72, 72))
+        $g.DrawString('Claude Code', $fontHeading, (New-Object Drawing.SolidBrush($ink)), 723, 313)
+        $g.DrawString('66% five-hour remaining', $fontBody, (New-Object Drawing.SolidBrush($muted)), 723, 349)
+
+        # Familiar Windows 11 notification-area layout, without a user's apps,
+        # desktop, account details, or real clock appearing in public media.
+        Fill-RoundedRect $g ([Drawing.RectangleF]::new(70, 478, 1140, 58)) 12 ([Drawing.Color]::FromArgb(249, 249, 249))
+        $g.DrawString('Windows system tray', $fontSmall, (New-Object Drawing.SolidBrush($muted)), 98, 500)
+        $g.DrawString('^', $fontBody, (New-Object Drawing.SolidBrush($muted)), 871, 499)
+        $g.DrawImage($codexTray, [Drawing.RectangleF]::new(906, 496, 20, 20))
+        $g.DrawImage($claudeTray, [Drawing.RectangleF]::new(940, 496, 20, 20))
+        $g.DrawString('ENG', $fontSmallBold, (New-Object Drawing.SolidBrush($ink)), 982, 500)
+        $taskbarPen = New-Object Drawing.Pen($ink, 1.5)
+        try {
+            $g.DrawArc($taskbarPen, 1034, 496, 20, 17, 219, 103)
+            $g.DrawArc($taskbarPen, 1038, 501, 12, 10, 219, 103)
+            $g.FillEllipse((New-Object Drawing.SolidBrush($ink)), 1043, 508, 3, 3)
+            $g.DrawRectangle($taskbarPen, 1068, 500, 5, 9)
+            $g.DrawLine($taskbarPen, 1073, 500, 1079, 496)
+            $g.DrawLine($taskbarPen, 1079, 496, 1079, 513)
+            $g.DrawLine($taskbarPen, 1079, 513, 1073, 509)
+            $g.DrawArc($taskbarPen, 1078, 496, 11, 17, 298, 124)
+            $g.DrawLine($taskbarPen, 920, 443, 933, 479)
+            $g.DrawLine($taskbarPen, 933, 479, 936, 470)
+            $g.DrawLine($taskbarPen, 933, 479, 925, 475)
+        } finally { $taskbarPen.Dispose() }
+        $g.DrawString('12:00 pm', $fontSmall, (New-Object Drawing.SolidBrush($ink)), 1118, 491)
+        $g.DrawString('21/09/2026', $fontSmall, (New-Object Drawing.SolidBrush($ink)), 1109, 508)
+        $g.DrawString('Double-click an icon to bring its bar back. Right-click for options.', $fontBody, (New-Object Drawing.SolidBrush($muted)), 74, 575)
         $created.Add((Save-Png $tray '03-tray-status.png'))
     }
     finally {
@@ -355,32 +314,40 @@ try {
         $tray.Dispose()
     }
 
-    # 04 - Animated expiry alert
-    $frames = New-Object Collections.Generic.List[Drawing.Bitmap]
-    try {
-        for ($frameIndex = 0; $frameIndex -lt 32; $frameIndex++) {
-            $phase = [single]($frameIndex / 32.0)
-            $widgetFrame = Render-Widget $urgentSnapshot $true $phase
-            $pair = New-Canvas 760 280 $darkCanvas
+    # 04 - Two real animation states, at the app's actual 10 fps phase increments.
+    # Frames live in ignored dist; no account state or screen capture is read.
+    if (-not $SkipAnimation) {
+        $framesRoot = Join-Path $renderRoot 'expiry-frames'
+        New-Item -ItemType Directory -Force -Path $framesRoot | Out-Null
+        for ($frameIndex = 0; $frameIndex -lt 80; $frameIndex++) {
+            $critical = $frameIndex -ge 40
+            $phase = if ($critical) { [single]((($frameIndex - 40) * 0.04) % 1) } else { [single]($frameIndex * 0.025) }
+            $demo = if ($critical) { $criticalSnapshot } else { $urgentSnapshot }
+            $snapshotType.GetProperty('FetchedAtUtc').SetValue($demo, [DateTime]::UtcNow, $null)
+            $widgetFrame = Render-Widget $demo $true $phase
+            $pair = New-Canvas 840 320 $darkCanvas
             $frame = $pair[0]
             $g = $pair[1]
             try {
-                $g.DrawString('Reset expiry alert', $fontGifTitle, (New-Object Drawing.SolidBrush($darkInk)), 52, 30)
-                $g.DrawString('A lightweight ember appears only inside the final 24 hours.', $fontGifBody, (New-Object Drawing.SolidBrush($darkMuted)), 54, 70)
-                Draw-ScaledWidget $g $widgetFrame ([Drawing.RectangleF]::new(104, 118, 552, 128))
+                $g.DrawString('A heads-up before your reset expires.', $fontGifTitle, (New-Object Drawing.SolidBrush($darkInk)), 42, 24)
+                $caption = if ($critical) { 'FINAL HOUR: red border, faster ember. Same small widget.' } else { 'FINAL 24 HOURS: an amber ember moves around the bar.' }
+                $g.DrawString($caption, $fontGifBody, (New-Object Drawing.SolidBrush($darkMuted)), 44, 67)
+                $g.DrawString('DEMO DATA', $fontSmallBold, (New-Object Drawing.SolidBrush($darkMuted)), 708, 33)
+                Draw-ScaledWidget $g $widgetFrame ([Drawing.RectangleF]::new(144, 119, 552, 128))
+                $g.DrawString('10 fps. Pauses while hidden. Respects Windows motion settings.', $fontGifBody, (New-Object Drawing.SolidBrush($darkMuted)), 44, 280)
+                $frame.Save((Join-Path $framesRoot ('frame-{0:D3}.png' -f $frameIndex)), [Drawing.Imaging.ImageFormat]::Png)
+                if ($frameIndex -eq 12) { $created.Add((Save-Png $frame '04-reset-expiry-poster.png')) }
             }
             finally {
                 $widgetFrame.Dispose()
                 $g.Dispose()
+                $frame.Dispose()
             }
-            $frames.Add($frame)
         }
         $gifPath = Join-Path $outputRoot '04-reset-expiry-animation.gif'
-        [AnimatedGifWriter]::Save($frames, $gifPath, 10)
+        & $PythonPath (Join-Path $PSScriptRoot 'encode-docs-gif.py') $framesRoot $gifPath
+        if ($LASTEXITCODE -ne 0) { throw 'GIF encoding failed. Use Python with Pillow, or -SkipAnimation for stills only.' }
         $created.Add($gifPath)
-    }
-    finally {
-        foreach ($frame in $frames) { $frame.Dispose() }
     }
 
     $created | ForEach-Object { Get-Item -LiteralPath $_ } | Select-Object Name, Length, FullName

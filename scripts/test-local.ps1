@@ -15,6 +15,7 @@ function Parse-Claude([string]$json, [DateTime]$now) {
     $type = $assembly.GetType('CodexUsageBar.ClaudeUsageService', $true)
     return $type.GetMethod('ParseCache', $static).Invoke($null, @($json, $now))
 }
+Assert ($null -eq $assembly.GetType('CodexUsageBar.DocumentationRenderer')) 'Documentation export code is not included in the running app'
 $now = [DateTime]::UtcNow
 $epoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $payload = @{

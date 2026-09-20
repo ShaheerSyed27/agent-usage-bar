@@ -12,6 +12,38 @@ Tiny Windows widgets for keeping an eye on Codex and Claude Code usage.
 
 ![Codex and Claude bars in light and dark mode, using sample values](docs/screenshots/01-overview.png)
 
+## Reset expiry, in motion
+
+In the last 24 hours, an amber ember moves around the Codex bar. In the final
+hour, it turns red and speeds up. Hover for the exact expiry date and time in
+your local timezone. It never redeems a reset for you.
+
+![Eight-second demo: amber banked-reset warning, then the faster red final-hour alert](docs/screenshots/04-reset-expiry-animation.gif)
+
+If GitHub pauses the GIF, click its play button.
+
+[See the exact-date example](docs/screenshots/02-reset-expiry.png) or
+[open the GIF at full resolution](docs/screenshots/04-reset-expiry-animation.gif).
+The sample jumps between two expiry states; the real countdown does not jump.
+Prefer a still image? [View the alert without motion](docs/screenshots/04-reset-expiry-poster.png).
+
+## In your system tray
+
+Each provider gets its own percentage icon. Double-click to show or hide its bar.
+
+Actual Windows taskbar photo, kept at native resolution:
+
+![Unmodified Windows taskbar capture with the blue Codex percentage icon](docs/screenshots/03-windows-taskbar.png)
+
+And a close-up of both providers, using sample values:
+
+![Windows taskbar mock with Codex and Claude percentage icons, plus enlarged icon details](docs/screenshots/03-tray-status.png)
+
+The large examples use sample data and the app's real drawing code, rendered at
+high resolution. Their taskbar surroundings are a labelled mock. The small photo
+above is an actual capture shared by the maintainer, without account details.
+The actual bars are just 276 x 64 pixels. [See the native-size bar](docs/screenshots/widget-light-native.png).
+
 ## Run it
 
 This first public version is source-only. Read the code, then build it yourself.
@@ -68,19 +100,9 @@ the maintainer. It has no analytics or auto-updater. The official Codex and Clau
 tools have their own network behavior and settings.
 
 Preferences and the latest Claude sample stay in `%LOCALAPPDATA%\AgentUsageBar`.
-There is no usage history or install tracking. Screenshots here use sample data.
+There is no usage history or install tracking. The large examples use sample data;
+the native taskbar photo is an explicitly shared, cropped capture.
 See [security and trust details](SECURITY.md) for the full boundaries.
-
-<details>
-<summary>See Codex reset alerts and tray percentages</summary>
-
-![Exact banked-reset expiry dates and countdowns with sample data](docs/screenshots/02-reset-expiry.png)
-
-![Percentage icons at full, healthy, low, and critical levels](docs/screenshots/03-tray-status.png)
-
-![A small ember travels around the Codex bar near a banked reset's expiry](docs/screenshots/04-reset-expiry-animation.gif)
-
-</details>
 
 ## Remove it
 

@@ -1,0 +1,45 @@
+{
+  "apple": {
+    "enabled": false,
+    "macLabProjectId": null,
+    "queueClass": "none"
+  },
+  "canonicalBase": "main",
+  "delivery": {
+    "defaultHandoff": "pull-request",
+    "failedExternalGateHandoff": "draft-pull-request",
+    "implementationRequestAuthorizes": [
+      "commit",
+      "push",
+      "open-pull-request"
+    ],
+    "selfMerge": false
+  },
+  "displayName": "Agent Usage Bar",
+  "gitAvailable": true,
+  "gitRequired": true,
+  "housekeeping": {
+    "minimumGraceHours": 6,
+    "namedPullRequestIntegrationAuthorizesEligibleRemoval": true,
+    "previewOnlyByDefault": true,
+    "retainBranchAfterWorktreeRemoval": true
+  },
+  "initialization": {
+    "documentationEntrypoint": "AGENTS.md",
+    "documentationRoutes": {},
+    "profile": "implementation",
+    "skill": "repo-initialization"
+  },
+  "integration": {
+    "deploymentRequiresExplicitApproval": true,
+    "method": "squash-pr",
+    "namedPullRequestScope": true,
+    "singleLane": true,
+    "skill": "bring-to-prod"
+  },
+  "policy": "docs/runbooks/multi-agent-development.md",
+  "projectId": "agent-usage-bar",
+  "repoId": "agent-usage-bar",
+  "schemaVersion": 1,
+  "standardVersion": 3
+}
