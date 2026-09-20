@@ -15,3 +15,16 @@ needed. Stop reading when there is enough context for the task.
 - Keep generated executables, settings, account data, and private screenshots out of Git.
 
 Update setup, security, and behavior docs when those contracts change.
+
+<!-- agentops:entrypoint:start -->
+## Parallel Agent Workflow
+
+- For every writing task, follow `docs/runbooks/multi-agent-development.md`.
+- One task owns one branch and worktree; one integration lane advances `main`.
+- Feature tasks default to a tested task-branch pull request and stop before
+  merge; integrate exact PRs in a separate `$bring-to-prod` task.
+- Use AgentOps lifecycle events and the shared resource queue instead of
+  direct agent-to-agent coordination.
+- Existing stricter product, security, release, and validation rules remain in
+  force.
+<!-- agentops:entrypoint:end -->
