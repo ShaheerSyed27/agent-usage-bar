@@ -13,6 +13,9 @@ using System.Web.Script.Serialization;
 using System.Windows.Forms;
 using Microsoft.Win32;
 using FormsTimer = System.Windows.Forms.Timer;
+#if DOCUMENTATION_RENDER
+using TextRenderer = CodexUsageBar.DocumentationTextRenderer;
+#endif
 
 [assembly: System.Reflection.AssemblyTitle("Agent Usage Bar")]
 [assembly: System.Reflection.AssemblyDescription("Compact Codex and Claude Code usage widgets")]
@@ -1940,6 +1943,18 @@ namespace CodexUsageBar
 
         private static Icon CreatePercentageTrayIcon(int percent, int state, bool claude)
         {
+            using (Bitmap bitmap = new Bitmap(20, 20))
+            using (Graphics graphics = Graphics.FromImage(bitmap))
+            {
+                DrawPercentageTrayIcon(graphics, percent, state, claude);
+                IntPtr handle = bitmap.GetHicon();
+                try { return (Icon)Icon.FromHandle(handle).Clone(); }
+                finally { NativeMethods.DestroyIcon(handle); }
+            }
+        }
+
+        private static void DrawPercentageTrayIcon(Graphics graphics, int percent, int state, bool claude)
+        {
             Color background = state == 3
                 ? Color.FromArgb(190, 126, 27)
                 : state == 2
@@ -1950,8 +1965,6 @@ namespace CodexUsageBar
 
             const int iconSize = 20;
             float fontSize = percent >= 100 ? 9f : (percent >= 10 ? 12f : 14f);
-            using (Bitmap bitmap = new Bitmap(iconSize, iconSize))
-            using (Graphics graphics = Graphics.FromImage(bitmap))
             using (SolidBrush backgroundBrush = new SolidBrush(background))
             using (Pen outlinePen = new Pen(Color.FromArgb(76, 0, 0, 0), 1f))
             using (Font numberFont = new Font("Segoe UI", fontSize, FontStyle.Bold, GraphicsUnit.Pixel))
@@ -1975,16 +1988,6 @@ namespace CodexUsageBar
                     new Rectangle(0, -1, iconSize, iconSize + 1),
                     Color.White,
                     numberFlags);
-
-                IntPtr handle = bitmap.GetHicon();
-                try
-                {
-                    return (Icon)Icon.FromHandle(handle).Clone();
-                }
-                finally
-                {
-                    NativeMethods.DestroyIcon(handle);
-                }
             }
         }
 

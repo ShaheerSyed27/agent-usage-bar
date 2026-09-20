@@ -18,3 +18,15 @@ copying a product's design:
 Provider-specific limitations matter more than decorative motion. Claude shows
 the age of the last status-line sample. Only a near-expiry Codex banked reset
 enables the existing ember; hidden windows and disabled Windows UI effects stop it.
+
+## Public media
+
+The same repeated-row and progressive-detail patterns above inform the examples.
+The overview compares both providers and themes. A separate taskbar view explains
+where the percentage icons live. The animation shows the amber and red expiry
+states without competing motion. Static and native-size alternatives are linked.
+
+Bar images are drawn from the real paint methods at 4x resolution. Composite
+images render at 2x, with no upscaling of small captures. Taskbar surroundings
+are explicitly a mock. All values are synthetic. The GIF uses the same phase
+increments as the app, with a labelled jump between demo expiry states.
