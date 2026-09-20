@@ -20,6 +20,8 @@ your local timezone. It never redeems a reset for you.
 
 ![Eight-second demo: amber banked-reset warning, then the faster red final-hour alert](docs/screenshots/04-reset-expiry-animation.gif)
 
+If GitHub pauses the GIF, click its play button.
+
 [See the exact-date example](docs/screenshots/02-reset-expiry.png) or
 [open the GIF at full resolution](docs/screenshots/04-reset-expiry-animation.gif).
 The sample jumps between two expiry states; the real countdown does not jump.
@@ -31,7 +33,7 @@ Each provider gets its own percentage icon. Double-click to show or hide its bar
 
 Actual Windows taskbar photo, kept at native resolution:
 
-![Unmodified Windows taskbar capture with the blue Codex icon showing 36 percent remaining](docs/screenshots/03-windows-taskbar.png)
+![Unmodified Windows taskbar capture with the blue Codex percentage icon](docs/screenshots/03-windows-taskbar.png)
 
 And a close-up of both providers, using sample values:
 

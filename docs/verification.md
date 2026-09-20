@@ -27,6 +27,10 @@ Checked on Windows on 21 September 2026 for Agent Usage Bar 2.0.0.
   crop was supplied for publication after the capture tool did not expose it.
   Both are visible in the README, with their provenance clearly distinguished.
   The crop matches the supplied file's SHA-256 and contains no text or EXIF chunks.
+- Opened the published branch as a signed-out GitHub visitor. All four README
+  images loaded at their intended source dimensions, none inside a collapsed
+  details section. The GIF plays from GitHub's playback button; the README
+  includes that hint for browsers which initially pause animations.
 - The application starts locally as one process. Its Claude connection waits
   for a normal status-line report; no model request was generated for testing.
 - The public file list contains source, scripts, documentation, and demo images.
