@@ -57,6 +57,18 @@ This first public version is source-only. Read the code, then build it yourself.
 
 3. Open `dist\AgentUsageBar.exe`.
 
+To add a searchable Start entry and desktop shortcut, and start it with Windows:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1 -Startup
+```
+
+This installs the reviewed build in `%LOCALAPPDATA%\Programs\Agent Usage Bar`.
+Search Start for **Agent Usage Bar**, **Codex**, or **Claude**, then right-click
+the result and choose **Pin to Start**. Windows keeps pinning under your control.
+Opening it again restores both bars instead of launching another copy. Startup
+respects your saved visibility. No admin access is needed.
+
 Windows 10 or 11 and .NET Framework 4.8 are required. The build uses the compiler
 included with Windows, with no package downloads or admin access.
 `ExecutionPolicy Bypass` applies only to that PowerShell process. It does not
@@ -67,8 +79,23 @@ installation exposing `codex.exe` on PATH. The bar connects automatically.
 Five-hour Codex limits are hidden. Weekly usage and banked-reset details depend
 on what Codex reports. The Codex integration has been used with a Pro account.
 
-**Claude Code:** use a current Claude Code version with a Pro or Max subscription.
-After building, connect its official status line:
+**Claude Desktop:** use desktop Code 2.1.287 or later and a Pro or Max
+subscription. This is Anthropic's documented version for mods enabled by default.
+The plugin also passes static validation on 2.1.286, but that alone does not
+verify a live desktop connection. Install the
+small local desktop bridge:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1 -Startup -ClaudeDesktop
+```
+
+Open a new **local Code** session, or restart an idle one, to load it. It observes
+Claude's own usage events and saves only percentages and reset times. There is
+no polling loop, prompt injection, model call, or credential access. It does not
+read the regular Chat tab, Cowork, remote or cloud sessions.
+
+**Claude terminal:** sign in to a current Claude Code version with a Pro or Max
+subscription. After building, connect its official status line:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\configure-claude.ps1
@@ -76,7 +103,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\configure-clau
 
 The setup backs up your settings and preserves an existing custom status line.
 Use Claude Code normally; values appear after it reports subscription usage.
-They update with Claude Code's status-line events. While Claude is idle or closed,
+They update with Claude Code's usage or status-line events. While Claude is idle or closed,
 the bar shows the last reading and its age. It cannot fetch new values on its own.
 API spend, context-window usage, and model-specific limits are not shown.
 See [Claude setup](docs/claude-setup.md) for details and manual integration.
@@ -86,13 +113,15 @@ See [Claude setup](docs/claude-setup.md) for details and manual integration.
 - Drag a bar to move it. Right-click for its theme, visibility, and other options.
 - Hide either bar independently. Double-click its tray icon to show it again.
 - F5 refreshes Codex or rereads Claude's local sample. Escape hides the focused bar.
+- The menu says which provider you are showing or hiding. Claude's refresh is
+  called **Reread local usage**, since it does not fetch a new account reading.
 - Start with Windows is optional and off by default. Quit closes both bars.
 
 ## Privacy, in plain English
 
 Codex runs through your installed `app-server` and uses your existing sign-in to
 read account metadata from OpenAI. Claude feeds the helper through its official
-local status-line feature. The helper discards other session metadata and saves
+local desktop mods API or terminal status-line feature. The helper discards other session metadata and saves
 only percentages, reset times, and the time of receipt.
 
 The app makes no model requests, reads no credential files, and sends nothing to
@@ -112,7 +141,10 @@ Turn off **Start with Windows**, if enabled. Disconnect the Claude status line:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\configure-claude.ps1 -Remove
 ```
 
-Choose **Quit Agent Usage Bar**, then delete the downloaded folder. You can also
+For the desktop bridge, remove only `.claude\skills\agent-usage-bar` (or that
+folder under your custom `CLAUDE_CONFIG_DIR`) and restart idle Code sessions.
+Choose **Quit Agent Usage Bar**, then remove the Start and desktop shortcuts and
+`%LOCALAPPDATA%\Programs\Agent Usage Bar`, if installed. Delete the downloaded folder. You can also
 delete `%LOCALAPPDATA%\AgentUsageBar` to remove the local preferences and sample.
 Your provider accounts and installations are unchanged.
 

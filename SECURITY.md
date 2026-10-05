@@ -25,6 +25,20 @@ percentages, reset times, schema version, and receipt time. Other fields,
 including session IDs, workspace paths, and transcript paths, are discarded.
 It does not open transcript files, access login tokens, or call an OAuth endpoint.
 
+For local Claude Desktop Code sessions, the opt-in plugin in `claude-plugin`
+uses the official `session.start` and `session.measure` events. It observes
+already reported `rateLimits` from the mods API, not account credentials or
+messages. Only validated five-hour and weekly figures are passed to the same
+compiled bridge. The desktop source adds `source_kind: 2`, a fixed numeric
+source marker. It never adds content to a conversation, changes a tool result,
+calls a model, opens a network connection, or polls in the background. The
+bridge process is bounded to 1.5 seconds; failure leaves the session unchanged.
+Mods in general run with the user's permissions, not in a security sandbox.
+Review the three plugin files as executable code. The supplied bridge calls
+only `clock.now`, `env.get` for `LOCALAPPDATA`, `session.usage` without a breakdown,
+and `process.run` for the local helper. Installing it does not enable early-access
+flags, bypass a disabled-hooks policy, or change managed settings.
+
 Only the latest sample is kept, in `%LOCALAPPDATA%\AgentUsageBar\claude-usage.json`.
 The bar checks this local file every two seconds and parses it only after a
 change or a reset boundary. It does not request a model response or a fresh
@@ -43,6 +57,10 @@ matching status-line command. The integration uses a documented feature:
   `%LOCALAPPDATA%\AgentUsageBar`. Can read earlier Codex Usage Bar preferences
   to preserve the existing Codex position and theme.
 - Changes the current user's Windows startup entry only when startup is toggled.
+- `install-windows.ps1` copies only reviewed build files to the current user's
+  Programs folder, creates Start and desktop shortcuts, and optionally enables
+  startup or copies the three desktop plugin files. It refuses unrecognized
+  installation folders and shortcuts, does not elevate, and does not auto-pin.
 - Writes a usage summary to the clipboard only when that menu action is chosen.
 - Runs with normal user permissions. No elevation, listener, HTTP client,
   telemetry, tracking ID, remote updater, or maintainer endpoint.

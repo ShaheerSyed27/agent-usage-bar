@@ -41,6 +41,20 @@ try {
     Assert ($process.ExitCode -eq 0) 'Compiled Claude bridge accepts documented status-line JSON'
 } finally { $process.Dispose() }
 $cache = $sanitized | ConvertFrom-Json
+$desktopBridge = New-Object Diagnostics.Process
+$desktopBridge.StartInfo = New-Object Diagnostics.ProcessStartInfo -Property @{
+    FileName=$bridgePath; Arguments='--desktop --check'; UseShellExecute=$false;
+    RedirectStandardInput=$true; RedirectStandardOutput=$true; CreateNoWindow=$true
+}
+try {
+    $null = $desktopBridge.Start()
+    $desktopBridge.StandardInput.WriteLine($payload)
+    $desktopBridge.StandardInput.Close()
+    $desktopJson = $desktopBridge.StandardOutput.ReadToEnd()
+    if (-not $desktopBridge.WaitForExit(10000)) { $desktopBridge.Kill(); throw 'Desktop bridge did not finish.' }
+    $desktopSample = Parse-Claude $desktopJson $now
+    Assert ($desktopBridge.ExitCode -eq 0 -and $desktopSample.ClaudeDesktopSample -and -not $desktopJson.Contains('PRIVATE_SAMPLE_DO_NOT_PERSIST')) 'Desktop data uses the same compiled privacy filter and records its source, without writing a live sample'
+} finally { $desktopBridge.Dispose() }
 $wrapper = New-Object Diagnostics.Process
 $wrapper.StartInfo = New-Object Diagnostics.ProcessStartInfo -Property @{
     FileName=(Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe');
@@ -58,7 +72,7 @@ try {
 } finally { $wrapper.Dispose() }
 Assert (-not $sanitized.Contains('PRIVATE_SAMPLE_DO_NOT_PERSIST')) 'Session IDs, transcript paths, project names, and arbitrary fields are discarded'
 Assert (@($cache.PSObject.Properties.Name).Count -eq 4 -and -not $cache.PSObject.Properties['spend_limit']) 'Cache contains only schema, timestamp, and the two supported usage windows'
-    $sample = Parse-Claude $sanitized $now
+$sample = Parse-Claude $sanitized $now
 Assert ($sample.SessionWindow.RemainingPercent -eq 65.5 -and $sample.WeeklyWindow.RemainingPercent -eq 82) 'Used percentages become the correct remaining percentages'
 $afterReset = Parse-Claude $sanitized $now.AddHours(2)
 Assert ($null -eq $afterReset.SessionWindow -and $null -ne $afterReset.WeeklyWindow) 'An expired Claude window becomes unavailable, never a guessed 100 percent'
@@ -71,6 +85,12 @@ $invalid = $sanitize.Invoke($null, @($bad, $now))
 Assert ($invalid.Count -eq 2) 'Null and out-of-range percentages are rejected'
 $invalidCache = '{"schema_version":1,"captured_at":' + ($epoch+3600) + '}'
 Assert ($null -eq (Parse-Claude $invalidCache $now)) 'Future cache timestamps are rejected'
+$startup = $assembly.GetType('CodexUsageBar.StartupManager', $true).GetMethod('IsCommandFor', $static)
+$testExecutable = 'C:\local fixture\AgentUsageBar.exe'
+Assert ($startup.Invoke($null, @(('"' + $testExecutable + '" --startup'), $testExecutable))) 'Startup recognizes the quoted installed app with its background flag'
+Assert ($startup.Invoke($null, @(('"' + $testExecutable + '"'), $testExecutable))) 'Startup recognizes its earlier compatible entry'
+Assert (-not $startup.Invoke($null, @('"C:\other\AgentUsageBar.exe" --startup', $testExecutable)) -and
+    -not $startup.Invoke($null, @(('"' + $testExecutable + '" --unexpected'), $testExecutable))) 'Startup never reports a different copy or unknown command as enabled'
 
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ('agent-usage-tests-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temporaryRoot | Out-Null
@@ -105,11 +125,28 @@ try {
         $form = [Activator]::CreateInstance($formType, @($provider))
         try {
             Assert ($form.Text.StartsWith($name) -and $form.ClientSize.Width -eq 276 -and $form.ClientSize.Height -eq 64) "$name has a correctly labelled compact window"
+            $emptyLabel = $formType.GetMethod('GetPeriodLabel',$instance).Invoke($form,@($null))
+            Assert ($emptyLabel -eq $(if ($name -eq 'Claude') {'Connect Claude Code'} else {'Weekly remaining'})) "$name empty state has an honest label"
+            $menu = $formType.GetField('_menu',$instance).GetValue($form)
+            [Windows.Forms.ToolStripDropDown].GetMethod('OnOpening',$instance).Invoke($menu,@([ComponentModel.CancelEventArgs]::new())) | Out-Null
+            $labels = @($menu.Items | Where-Object {$_.Text} | ForEach-Object {$_.Text})
+            Assert ($labels.Count -eq @($labels | Select-Object -Unique).Count -and $labels -contains ('Show ' + $name + ' bar')) "$name menu has unique labels and provider-specific visibility"
+            Assert ($labels[0] -eq $(if ($name -eq 'Claude') {'Reread local usage'} else {'Refresh now'})) "$name refresh describes its real data source"
+            $copy = $formType.GetField('_copyItem',$instance).GetValue($form)
+            Assert (-not $copy.Enabled) "$name cannot copy an empty usage summary"
             $formType.GetField('_snapshot', $instance).SetValue($form, $sample)
+            [Windows.Forms.ToolStripDropDown].GetMethod('OnOpening',$instance).Invoke($menu,@([ComponentModel.CancelEventArgs]::new())) | Out-Null
+            Assert ($copy.Enabled) "$name enables copy only when a real window is available"
             $selected = $formType.GetProperty('DisplayWindow', $instance).GetValue($form, $null)
             Assert ($selected.DurationMinutes -eq $(if ($name -eq 'Claude') {300} else {10080})) "$name uses the correct primary limit"
             $bitmap = New-Object Drawing.Bitmap 276,64
             try { $form.DrawToBitmap($bitmap, [Drawing.Rectangle]::new(0,0,276,64)) } finally { $bitmap.Dispose() }
+            if ($name -eq 'Claude') {
+                $expired = Parse-Claude $sanitized $now.AddDays(3)
+                $formType.GetField('_snapshot',$instance).SetValue($form,$expired)
+                [Windows.Forms.ToolStripDropDown].GetMethod('OnOpening',$instance).Invoke($menu,@([ComponentModel.CancelEventArgs]::new())) | Out-Null
+                Assert (-not $copy.Enabled -and $formType.GetMethod('GetPeriodLabel',$instance).Invoke($form,@($null)) -eq 'Usage not reported') 'Claude expiry disables copy and does not imply a weekly limit exists'
+            }
         } finally { $form.Dispose() }
     }
 } finally {
