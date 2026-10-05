@@ -123,6 +123,9 @@ try {
     foreach ($name in @('Codex','Claude')) {
         $provider = [Enum]::Parse($providerType, $name)
         $form = [Activator]::CreateInstance($formType, @($provider))
+        $otherName = if ($name -eq 'Codex') {'Claude'} else {'Codex'}
+        $otherForm = [Activator]::CreateInstance($formType, @([Enum]::Parse($providerType,$otherName)))
+        $formType.GetProperty('OtherBar',$instance).SetValue($form,$otherForm,$null)
         try {
             Assert ($form.Text.StartsWith($name) -and $form.ClientSize.Width -eq 276 -and $form.ClientSize.Height -eq 64) "$name has a correctly labelled compact window"
             $emptyLabel = $formType.GetMethod('GetPeriodLabel',$instance).Invoke($form,@($null))
@@ -131,6 +134,7 @@ try {
             [Windows.Forms.ToolStripDropDown].GetMethod('OnOpening',$instance).Invoke($menu,@([ComponentModel.CancelEventArgs]::new())) | Out-Null
             $labels = @($menu.Items | Where-Object {$_.Text} | ForEach-Object {$_.Text})
             Assert ($labels.Count -eq @($labels | Select-Object -Unique).Count -and $labels -contains ('Show ' + $name + ' bar')) "$name menu has unique labels and provider-specific visibility"
+            Assert ($labels -contains ('Show ' + $otherName + ' bar') -and $labels -notcontains 'Show other bar') "$name menu identifies the other provider instead of a generic duplicate control"
             Assert ($labels[0] -eq $(if ($name -eq 'Claude') {'Reread local usage'} else {'Refresh now'})) "$name refresh describes its real data source"
             $copy = $formType.GetField('_copyItem',$instance).GetValue($form)
             Assert (-not $copy.Enabled) "$name cannot copy an empty usage summary"
@@ -147,7 +151,7 @@ try {
                 [Windows.Forms.ToolStripDropDown].GetMethod('OnOpening',$instance).Invoke($menu,@([ComponentModel.CancelEventArgs]::new())) | Out-Null
                 Assert (-not $copy.Enabled -and $formType.GetMethod('GetPeriodLabel',$instance).Invoke($form,@($null)) -eq 'Usage not reported') 'Claude expiry disables copy and does not imply a weekly limit exists'
             }
-        } finally { $form.Dispose() }
+        } finally { $form.Dispose(); $otherForm.Dispose() }
     }
 } finally {
     # The target is the exact unique test folder created above, never a project or home folder.

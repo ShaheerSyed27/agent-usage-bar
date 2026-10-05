@@ -41,7 +41,7 @@ if ($ClaudeDesktop -and (Test-Path -LiteralPath $pluginRoot)) {
     }
 }
 if ($DryRun) {
-    [pscustomobject]@{InstallDirectory=$installRoot;StartMenuShortcut=$links[0];DesktopShortcut=$links[1];Startup=[bool]$Startup;ClaudeDesktop=[bool]$ClaudeDesktop} 
+    [pscustomobject]@{InstallDirectory=$installRoot;StartMenuShortcut=$links[0];DesktopShortcut=$links[1];Startup=[bool]$Startup;ClaudeDesktop=[bool]$ClaudeDesktop}
     return
 }
 # Updating a running copy can corrupt its install. Leave it untouched and ask to quit.

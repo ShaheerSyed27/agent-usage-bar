@@ -1,4 +1,4 @@
-param([string]$PythonPath = 'python', [switch]$SkipAnimation)
+param([string]$PythonPath = 'python', [switch]$SkipAnimation, [string]$OutputPath)
 $ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName System.Drawing
@@ -7,7 +7,7 @@ Add-Type -AssemblyName System.Windows.Forms
 $projectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $renderRoot = Join-Path $projectRoot 'dist\documentation'
 $assemblyPath = Join-Path $renderRoot 'DocumentationRenderer.dll'
-$outputRoot = Join-Path $projectRoot 'docs\screenshots'
+$outputRoot = if ($OutputPath) { [IO.Path]::GetFullPath($OutputPath) } else { Join-Path $projectRoot 'docs\screenshots' }
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $renderRoot | Out-Null
 
