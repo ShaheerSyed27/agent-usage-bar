@@ -27,14 +27,16 @@ namespace CodexUsageBar
                 if (!file.Exists)
                 {
                     _lastWriteUtc = DateTime.MinValue;
-                    RaiseError("Connect Claude Code with scripts\\configure-claude.ps1, then use Claude normally. " +
-                        "Subscription limits arrive through its status line after a response. No login tokens are read.");
+                    RaiseError("Claude Desktop needs Code 2.1.287+ with mods enabled and the optional desktop plugin, not the terminal status line. " +
+                        "Install with scripts\\install-windows.ps1 -ClaudeDesktop, then open or restart an idle local Code session. " +
+                        "Terminal users: sign in to Claude Code and run scripts\\configure-claude.ps1. " +
+                        "Values arrive when Claude reports subscription limits. No login tokens or chats are read.");
                     return;
                 }
-                if (file.Length > 8192) { RaiseError("Claude usage data is invalid. Awaiting a fresh status-line update."); return; }
+                if (file.Length > 8192) { RaiseError("Claude usage data is invalid. Awaiting a fresh desktop or status-line update."); return; }
                 if (file.LastWriteTimeUtc == _lastWriteUtc && DateTime.UtcNow < _nextResetUtc) return;
                 UsageSnapshot snapshot = ParseCache(File.ReadAllText(_path), DateTime.UtcNow);
-                if (snapshot == null) { RaiseError("Claude usage data is invalid. Awaiting a fresh status-line update."); return; }
+                if (snapshot == null) { RaiseError("Claude usage data is invalid. Awaiting a fresh desktop or status-line update."); return; }
                 _lastWriteUtc = file.LastWriteTimeUtc;
                 _nextResetUtc = DateTime.MaxValue;
                 if (snapshot.SessionWindow != null) _nextResetUtc = snapshot.SessionWindow.ResetAtUtc;
@@ -44,8 +46,8 @@ namespace CodexUsageBar
             }
             catch (IOException) { RaiseError("Claude's local sample is temporarily unavailable. Retrying."); }
             catch (UnauthorizedAccessException) { RaiseError("Cannot read the local Claude usage sample."); }
-            catch (ArgumentException) { RaiseError("Waiting for valid Claude status-line data."); }
-            catch (InvalidOperationException) { RaiseError("Waiting for valid Claude status-line data."); }
+            catch (ArgumentException) { RaiseError("Waiting for valid Claude usage data."); }
+            catch (InvalidOperationException) { RaiseError("Waiting for valid Claude usage data."); }
         }
 
         internal static UsageSnapshot ParseCache(string input, DateTime now)
@@ -54,6 +56,7 @@ namespace CodexUsageBar
             Dictionary<string, object> root = ClaudeUsageData.Serializer().DeserializeObject(input) as Dictionary<string, object>;
             object capturedValue;
             object schema;
+            object source;
             long captured;
             if (root == null || !root.TryGetValue("schema_version", out schema) || Convert.ToString(schema, CultureInfo.InvariantCulture) != "1" ||
                 !root.TryGetValue("captured_at", out capturedValue) ||
@@ -65,6 +68,7 @@ namespace CodexUsageBar
                 SessionWindow = ConvertWindow(ClaudeUsageData.ReadWindow(root, "five_hour", now), 300),
                 WeeklyWindow = ConvertWindow(ClaudeUsageData.ReadWindow(root, "seven_day", now), 10080),
                 ResetCreditDetails = new List<ResetCredit>(),
+                ClaudeDesktopSample = root.TryGetValue("source_kind", out source) && Convert.ToString(source, CultureInfo.InvariantCulture) == "2",
                 OrdinaryUsageAllowed = true
             };
         }

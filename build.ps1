@@ -15,6 +15,8 @@ $claudeData = Join-Path $projectRoot 'ClaudeUsageData.cs'
 $claudeService = Join-Path $projectRoot 'ClaudeUsageService.cs'
 $manifest = Join-Path $projectRoot 'app.manifest'
 $executable = Join-Path $packageRoot 'AgentUsageBar.exe'
+$appIcon = Join-Path $packageRoot 'AgentUsageBar.ico'
+& (Join-Path $projectRoot 'scripts\create-app-icon.ps1') -OutputPath $appIcon
 
 & $compiler `
     /nologo `
@@ -23,6 +25,7 @@ $executable = Join-Path $packageRoot 'AgentUsageBar.exe'
     /optimize+ `
     /langversion:5 `
     "/win32manifest:$manifest" `
+    "/win32icon:$appIcon" `
     /reference:System.dll `
     /reference:System.Core.dll `
     /reference:System.Drawing.dll `

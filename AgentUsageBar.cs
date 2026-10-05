@@ -21,27 +21,28 @@ using TextRenderer = CodexUsageBar.DocumentationTextRenderer;
 [assembly: System.Reflection.AssemblyDescription("Compact Codex and Claude Code usage widgets")]
 [assembly: System.Reflection.AssemblyCompany("Local utility")]
 [assembly: System.Reflection.AssemblyProduct("Agent Usage Bar")]
-[assembly: System.Reflection.AssemblyVersion("2.0.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("2.0.0.0")]
+[assembly: System.Reflection.AssemblyVersion("2.0.1.0")]
+[assembly: System.Reflection.AssemblyFileVersion("2.0.1.0")]
 
 namespace CodexUsageBar
 {
     internal static class Program
     {
         private static Mutex _singleInstance;
+        private const string ShowEventName = "Local\\AgentUsageBarShow";
 
         [STAThread]
-        private static void Main()
+        private static void Main(string[] args)
         {
+            bool background = args.Length == 1 && args[0] == "--startup";
             bool created;
             _singleInstance = new Mutex(true, "Local\\CodexUsageBar", out created);
             if (!created)
             {
-                MessageBox.Show(
-                    "Agent Usage Bar or the earlier Codex Usage Bar is already running. Look for it in the system tray.",
-                    "Agent Usage Bar",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
+                if (!background && !RequestShow())
+                    MessageBox.Show("The earlier Codex Usage Bar is running. Quit that copy from its tray menu, then open Agent Usage Bar.",
+                        "Agent Usage Bar", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _singleInstance.Dispose();
                 return;
             }
 
@@ -50,7 +51,9 @@ namespace CodexUsageBar
                 NativeMethods.TryEnableDpiAwareness();
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
-                Application.Run(new UsageApplicationContext());
+                using (EventWaitHandle showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName))
+                using (UsageApplicationContext context = new UsageApplicationContext(showEvent, !background))
+                    Application.Run(context);
             }
             finally
             {
@@ -60,6 +63,16 @@ namespace CodexUsageBar
                     _singleInstance.Dispose();
                 }
             }
+        }
+        private static bool RequestShow()
+        {
+            try
+            {
+                using (EventWaitHandle showEvent = EventWaitHandle.OpenExisting(ShowEventName)) showEvent.Set();
+                return true;
+            }
+            catch (WaitHandleCannotBeOpenedException) { return false; }
+            catch (UnauthorizedAccessException) { return false; }
         }
     }
 
@@ -77,8 +90,9 @@ namespace CodexUsageBar
     {
         private readonly UsageBarForm _codex = new UsageBarForm(UsageProvider.Codex);
         private readonly UsageBarForm _claude = new UsageBarForm(UsageProvider.Claude);
+        private readonly RegisteredWaitHandle _showWait;
 
-        public UsageApplicationContext()
+        public UsageApplicationContext(EventWaitHandle showEvent, bool launchedByUser)
         {
             _codex.OtherBar = _claude;
             _claude.OtherBar = _codex;
@@ -86,6 +100,18 @@ namespace CodexUsageBar
             _claude.ExitRequested += ExitAll;
             _codex.ShowInitially();
             _claude.ShowInitially();
+            if (launchedByUser) ShowBars();
+            _showWait = ThreadPool.RegisterWaitForSingleObject(showEvent, delegate
+            {
+                try { _codex.BeginInvoke((MethodInvoker)ShowBars); }
+                catch (InvalidOperationException) { }
+            }, null, Timeout.Infinite, false);
+        }
+
+        private void ShowBars()
+        {
+            _codex.ShowWidget();
+            _claude.ShowWidget();
         }
 
         private void ExitAll()
@@ -97,7 +123,11 @@ namespace CodexUsageBar
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { _codex.Dispose(); _claude.Dispose(); }
+            if (disposing)
+            {
+                if (_showWait != null) _showWait.Unregister(null);
+                _codex.Dispose(); _claude.Dispose();
+            }
             base.Dispose(disposing);
         }
     }
@@ -154,6 +184,7 @@ namespace CodexUsageBar
         public bool OrdinaryUsageAllowed { get; set; }
         public int ResetCredits { get; set; }
         public List<ResetCredit> ResetCreditDetails { get; set; }
+        public bool ClaudeDesktopSample { get; set; }
     }
 
     internal sealed class CodexUsageService : IUsageService
@@ -267,7 +298,7 @@ namespace CodexUsageBar
                                 {
                                     { "name", "agent_usage_bar" },
                                     { "title", "Agent Usage Bar" },
-                                    { "version", "2.0.0" }
+                                    { "version", "2.0.1" }
                                 }
                             }
                         }
@@ -1048,7 +1079,7 @@ namespace CodexUsageBar
                 _snapshot = snapshot;
                 _serviceError = null;
                 _refreshing = false;
-                _copyItem.Enabled = true;
+                _copyItem.Enabled = DisplayWindow != null;
                 UpdateAttentionAnimationState();
                 UpdateToolTip();
                 Invalidate();
@@ -1276,8 +1307,7 @@ namespace CodexUsageBar
                 graphics.FillEllipse(statusDotBrush, bounds.Left + 41, 10, 4, 4);
             }
             TextRenderer.DrawText(graphics, GetFreshnessText(), _statusFont, new Point(bounds.Left + 50, 6), statusTextColor, textFlags);
-            string periodLabel = _provider == UsageProvider.Claude && window != null && window.DurationMinutes == 300
-                ? "5-hour remaining" : "Weekly remaining";
+            string periodLabel = GetPeriodLabel(window);
             TextRenderer.DrawText(graphics, periodLabel, _brandFont, new Point(bounds.Left, 22), PrimaryTextColor, textFlags);
             TextRenderer.DrawText(
                 graphics,
@@ -1286,6 +1316,14 @@ namespace CodexUsageBar
                 new Rectangle(bounds.Left, 42, bounds.Width, 15),
                 resetTextColor,
                 textFlags | TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter);
+        }
+
+        internal string GetPeriodLabel(UsageWindow window)
+        {
+            if (_provider == UsageProvider.Claude && window == null)
+                return _snapshot == null ? "Connect Claude Code" : "Usage not reported";
+            return _provider == UsageProvider.Claude && window.DurationMinutes == 300
+                ? "5-hour remaining" : "Weekly remaining";
         }
 
         private void DrawDivider(Graphics graphics, int x)
@@ -1388,7 +1426,7 @@ namespace CodexUsageBar
                 Padding = new Padding(4)
             };
 
-            ToolStripMenuItem refreshItem = new ToolStripMenuItem("Refresh now");
+            ToolStripMenuItem refreshItem = new ToolStripMenuItem(_provider == UsageProvider.Claude ? "Reread local usage" : "Refresh now");
             refreshItem.ShortcutKeyDisplayString = "F5";
             refreshItem.Click += delegate { RefreshUsage(); };
 
@@ -1415,7 +1453,7 @@ namespace CodexUsageBar
                 if (!StartupManager.SetEnabled(desired, out error))
                 {
                     startupLocal.Checked = !desired;
-                    MessageBox.Show(error, "Codex Usage Bar", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show(error, "Agent Usage Bar", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
             };
 
@@ -1432,19 +1470,19 @@ namespace CodexUsageBar
             ToolStripMenuItem resetPositionItem = new ToolStripMenuItem("Move to top-right");
             resetPositionItem.Click += delegate { MoveToTopRight(); };
 
-            ToolStripMenuItem visibilityLocal = new ToolStripMenuItem("Hide widget");
+            ToolStripMenuItem visibilityLocal = new ToolStripMenuItem("Hide " + ProviderName + " bar");
             visibilityLocal.Click += delegate { ToggleVisibility(); };
 
             ToolStripMenuItem otherItem = new ToolStripMenuItem("Show other bar");
             otherItem.Click += delegate { if (OtherBar != null) OtherBar.ToggleVisibility(); };
-            ToolStripMenuItem setupItem = new ToolStripMenuItem("Claude setup instructions");
+            ToolStripMenuItem setupItem = new ToolStripMenuItem("Claude connection help");
             setupItem.Click += delegate
             {
                 MessageBox.Show(
-                    "From the project folder, run scripts\\configure-claude.ps1 in PowerShell.\n\n" +
-                    "This connects Claude Code's status line to the Claude bar. Existing custom status lines are preserved.\n\n" +
-                    "Claude values arrive after a normal Claude Code response. No extra model request is made by the widget. " +
-                    "See docs\\claude-setup.md for details.", "Connect Claude Code", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    "Claude Desktop: use Code 2.1.287 or later. Run scripts\\install-windows.ps1 -ClaudeDesktop from the source folder, then open a new local Code session or restart an idle session.\n\n" +
+                    "Claude terminal: sign in to Claude Code and run scripts\\configure-claude.ps1. Existing custom status lines are preserved.\n\n" +
+                    "Both bridges pass only percentages and reset times. Values arrive when Claude reports usage; this app never sends a model prompt. " +
+                    "Refresh rereads the last local sample, not Claude's account. See docs\\claude-setup.md.", "Claude connection", MessageBoxButtons.OK, MessageBoxIcon.Information);
             };
             ToolStripMenuItem quitItem = new ToolStripMenuItem("Quit Agent Usage Bar");
             quitItem.Click += delegate
@@ -1467,10 +1505,11 @@ namespace CodexUsageBar
             menu.Items.Add(quitItem);
             menu.Opening += delegate
             {
-                visibilityLocal.Text = Visible ? "Hide widget" : "Show widget";
+                visibilityLocal.Text = (Visible ? "Hide " : "Show ") + ProviderName + " bar";
                 topMostLocal.Checked = TopMost;
                 darkModeLocal.Checked = _darkMode;
                 startupLocal.Checked = StartupManager.IsEnabled();
+                copyLocal.Enabled = DisplayWindow != null;
                 otherItem.Enabled = OtherBar != null;
                 if (OtherBar != null) otherItem.Text = (OtherBar.Visible ? "Hide " : "Show ") + OtherBar.ProviderName + " bar";
             };
@@ -1525,7 +1564,7 @@ namespace CodexUsageBar
             _settings.Save(Location, TopMost, _darkMode);
         }
 
-        private void ShowWidget()
+        internal void ShowWidget()
         {
             _settings.Visible = true;
             Show();
@@ -1846,7 +1885,7 @@ namespace CodexUsageBar
                 }
                 if (_provider == UsageProvider.Claude)
                 {
-                    lines.Add("Source: Claude Code status line");
+                    lines.Add(_snapshot.ClaudeDesktopSample ? "Source: Claude Code desktop plugin" : "Source: Claude Code status line");
                     lines.Add("Last received: " + FormatLocalExpiry(_snapshot.FetchedAtUtc));
                     lines.Add("Updates when Claude Code reports usage. Refresh rereads local data.");
                     if (DateTime.UtcNow - _snapshot.FetchedAtUtc > TimeSpan.FromMinutes(3))
@@ -2100,13 +2139,19 @@ namespace CodexUsageBar
             {
                 using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RunKeyPath, false))
                 {
-                    return key != null && key.GetValue(ValueName) != null;
+                    return key != null && IsCommandFor(key.GetValue(ValueName) as string, Application.ExecutablePath);
                 }
             }
             catch
             {
                 return false;
             }
+        }
+
+        internal static bool IsCommandFor(string command, string executable)
+        {
+            return string.Equals(command, "\"" + executable + "\" --startup", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(command, "\"" + executable + "\"", StringComparison.OrdinalIgnoreCase);
         }
 
         public static bool SetEnabled(bool enabled, out string error)
@@ -2118,7 +2163,7 @@ namespace CodexUsageBar
                 {
                     if (enabled)
                     {
-                        key.SetValue(ValueName, "\"" + Application.ExecutablePath + "\"");
+                        key.SetValue(ValueName, "\"" + Application.ExecutablePath + "\" --startup");
                     }
                     else
                     {

@@ -1,0 +1,7 @@
+{
+  "name": "agent-usage-bar",
+  "version": "2.0.1",
+  "description": "Send only local subscription percentages and reset times to Agent Usage Bar.",
+  "author": { "name": "Agent Usage Bar contributors" },
+  "license": "MIT"
+}

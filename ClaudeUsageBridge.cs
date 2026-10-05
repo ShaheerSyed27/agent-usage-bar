@@ -13,7 +13,14 @@ namespace CodexUsageBar
         {
             try
             {
-                if (args.Length > 1 || (args.Length == 1 && args[0] != "--check")) return 2;
+                bool check = false;
+                bool desktop = false;
+                foreach (string arg in args)
+                {
+                    if (arg == "--check" && !check) check = true;
+                    else if (arg == "--desktop" && !desktop) desktop = true;
+                    else return 2;
+                }
                 StringBuilder input = new StringBuilder();
                 char[] buffer = new char[2048];
                 int read;
@@ -23,14 +30,16 @@ namespace CodexUsageBar
                     input.Append(buffer, 0, read);
                 }
                 Dictionary<string, object> sample = ClaudeUsageData.Sanitize(input.ToString(), DateTime.UtcNow);
+                if (desktop) sample["source_kind"] = 2;
                 string json = ClaudeUsageData.Serializer().Serialize(sample);
-                if (args.Length == 1)
+                if (check)
                 {
                     Console.WriteLine(json);
                     return 0;
                 }
                 // Only the allowlisted numeric sample reaches disk. Raw stdin is never logged.
-                WriteCache(json, ClaudeUsageData.CachePath);
+                if (sample.ContainsKey("five_hour") || sample.ContainsKey("seven_day"))
+                    WriteCache(json, ClaudeUsageData.CachePath);
                 List<string> parts = new List<string>();
                 foreach (string key in new[] { "five_hour", "seven_day" })
                 {

@@ -1,9 +1,43 @@
 # Connect Claude Code
 
-This uses Claude Code's [documented status-line data](https://code.claude.com/docs/en/statusline).
+This uses Claude Code's documented [desktop mods API](https://code.claude.com/docs/en/plugins/mods/reference#mods-api-methods)
+or [terminal status-line data](https://code.claude.com/docs/en/statusline).
 It does not read `.credentials.json`, reuse an OAuth token, or call a model.
 
-## Automatic setup
+## Claude Desktop
+
+The terminal status line is not the desktop integration. Use desktop Code
+2.1.287 or later, the [documented requirement for mods enabled by default](https://code.claude.com/docs/en/plugins/mods/overview#turn-mods-on-or-off).
+Build first, then run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1 -ClaudeDesktop -Startup
+```
+
+This installs the Windows app and copies the three reviewed plugin files to
+`skills\agent-usage-bar` under `CLAUDE_CONFIG_DIR`, or your `.claude` folder.
+It preserves your Claude settings, other plugins, and terminal status line.
+Open a new **local Code** session or restart an idle session to load the plugin.
+Do not interrupt a running task just to load it.
+
+The plugin observes `session.start` and `session.measure`. It reads Claude's
+already reported `rateLimits`, filters `five_hour` and `seven_day`, converts
+ISO reset dates to Unix seconds, and passes that tiny JSON to the compiled
+privacy filter. A sample with no valid limits never erases an earlier sample.
+There are no timers, model calls, HTTP calls, chat reads, or interface changes.
+Static validation passes with the installed Claude Code 2.1.286 plugin validator.
+That check does not prove the running desktop session has loaded the bridge.
+Older versions must update Desktop or use the terminal integration. This installer
+does not change early-access environment flags, hooks policy, or managed settings.
+
+This supports local desktop **Code** sessions, not the Chat or Cowork tabs,
+remote sessions, cloud sessions, or API-only accounts. Subscription windows
+still depend on what Claude itself reports. The next normal Code response
+provides fresh usage. Missing windows remain unavailable, never a guessed 100%.
+
+To disconnect, remove only this plugin folder and restart idle sessions.
+
+## Claude Code in a terminal
 
 Build the app, then run this from the source folder:
 
@@ -48,6 +82,11 @@ status line. Do not save the raw JSON or log it.
 Project-level Claude settings can override user settings. Check those if the
 widget is waiting for data even after using Claude. With WSL, the helper must
 run on Windows and feed the Windows cache; automatic WSL setup is not included.
+
+If the bar still says **Connect Claude Code**, check the integration for the
+surface you actually use. A terminal status line cannot supply desktop data.
+For terminal use, `claude auth status` can confirm you are signed in. Do not
+share its raw output, credential files, or conversations in an issue.
 
 ## Disconnect
 
